@@ -94,6 +94,7 @@ def run_p2p_online(
 
         # (reward - delay_weight * delay) / 资源增量。
         def score(item):
+            """计算候选模型的资源收益密度，用于在线 P2P 排序。"""
             mid, delay = item
             fm = fm_map[mid]
             adp = adapters_dict[(mid, req.type)]
@@ -108,12 +109,9 @@ def run_p2p_online(
             if (adp.model_id, adp.service_type) not in edge.loaded_adapters:
                 extra_gpu += edge.delta * adp.size
 
-            alpha_storage = 1.0
-            alpha_gpu = 5.0
-            combined = alpha_storage * extra_storage + alpha_gpu * extra_gpu
+            combined = extra_storage + extra_gpu
             net_utility = req.reward - delay_weight * delay
-            utility_density = net_utility / (combined + 1e-6)
-            return (-utility_density, combined, delay, -adp.accuracy)
+            return (-(net_utility / (combined + 1e-6)), delay)
 
         candidates.sort(key=score)
 

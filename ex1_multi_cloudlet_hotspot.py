@@ -214,6 +214,12 @@ adapters = {
 
 
 def init_environment():
+    """初始化热点场景实验所需的网络、边缘节点、模型和适配器状态。
+    该函数会读取边缘服务器拓扑，构建网络图，并为每个 cloudlet
+    随机分配存储、显存、计算能力以及初始缓存 and 加载状态。
+    Returns:
+        tuple: (G, edges, foundation_models, adapters, fm_dict)
+    """
     edge_df, edge_rad = read_edge_servers()
     G = build_networkx(edge_df, edge_rad)
     print(
@@ -228,7 +234,6 @@ def init_environment():
 
     for _, row in edge_df.iterrows():
         site_id = row["SITE_ID"]
-        # 适度收紧资源，放大多用户共享模型时的全局协调收益
         storage_cap = random.choice([24, 32, 48, 64]) * 1024  # 单位: MB
         memory_cap = random.choice([16, 24, 32, 48]) * 1024  # 单位: MB
         eta = random.uniform(107, 312)
@@ -240,7 +245,6 @@ def init_environment():
             eta=eta,
         )
 
-        # -- 进一步减少初始缓存，让算法决策而不是运气主导结果 --
         num_models_to_cache = random.randint(0, 1)
         sampled_models = random.sample(foundation_models, num_models_to_cache)
         for fm in sampled_models:
@@ -253,7 +257,7 @@ def init_environment():
             key for key in adapter_keys if key[0] in cloudlet.cached_models
         ]
         if valid_adapters_to_cache:
-            # 随机挑选少量适配器，避免初始状态就形成过强的命中优势
+            # 随机挑选少量适配器
             num_adapters_to_cache = random.randint(
                 1, min(2, len(valid_adapters_to_cache))
             )
@@ -299,7 +303,6 @@ def init_environment():
                     cloudlet.loaded_adapters.add(adp_key)
                     cloudlet.used_memory += adp.size
 
-        # 保存对象
         edges[site_id] = cloudlet
     print(f" -> 初始化了 {len(edges)} 个边缘节点，并完成了随机缓存模型和适配器。")
 
@@ -314,8 +317,13 @@ def init_environment():
 
 
 def init_users(number):
-    """
-    生成指定数量的用户请求
+    """生成默认分布下的用户请求集合。
+    该函数按照真实用户与最近 cloudlet 的映射关系，随机生成请求类型、
+    指令长度、奖励、精度需求和时延需求，用于非热点场景实验。
+    Args:
+        number (int): 需要生成的用户请求数量。
+    Returns:
+        list[User]: 生成的用户请求对象列表。
     """
     neighbors = nearestNeighbors()
     users = []
@@ -349,11 +357,14 @@ def init_users(number):
 
 
 def init_users_hotspot(number, num_hot_edges=100):
-    """多点场景下的"热点 cloudlet" 用户分布
-    - 仍然使用真实地理分布的 edge 服务器集合
-    - 先从所有 edge 里随机挑选 num_hot_edges 个作为"热点 cloudlet"
-    - 然后只从这些热点 cloudlet 覆盖的用户中采样 number 个请求
-    这样 3000 个请求会集中到大约 100 个 cloudlet 上，增加局部拥塞难度。
+    """生成热点 cloudlet 场景下的用户请求集合。
+    该函数先从所有 edge 服务器中随机选出若干热点 cloudlet，再只从这些
+    热点节点覆盖的用户中采样请求，以制造局部负载集中和资源竞争。
+    Args:
+        number (int): 需要生成的用户请求数量。
+        num_hot_edges (int): 热点 cloudlet 的数量。
+    Returns:
+        list[User]: 生成的热点场景用户请求对象列表。
     """
     neighbors = nearestNeighbors()
     users = []
@@ -367,12 +378,12 @@ def init_users_hotspot(number, num_hot_edges=100):
         edge_id: tuple(random.sample(service_types, 2)) for edge_id in hot_edges
     }
 
-    # 过滤出这些热点 cloudlet 所在的用户，再从中采样 number 个
+    # 过滤出热点 cloudlet 所在的用户，再从中采样 number 个
     hotspot_rows = neighbors[neighbors["NearestEdgeSiteID"].isin(hot_edges)]
     if len(hotspot_rows) >= number:
         selected_rows = hotspot_rows.sample(n=number, replace=False, random_state=1)
     else:
-        # 如果可用用户不足，就允许重复采样，保持总请求数为 number
+        # 如果可用用户不足，就重复采样，保持总请求数为 number
         selected_rows = hotspot_rows.sample(n=number, replace=True, random_state=1)
 
     for _, row in selected_rows.iterrows():
@@ -391,7 +402,7 @@ def init_users_hotspot(number, num_hot_edges=100):
             ]
             req_type = random.choice(fallback_types)
         instruction = random.randint(300, 2000)
-        reward = random.uniform(10, 50)  # reward
+        reward = random.uniform(10, 50)
 
         req = Request(
             homeCloudlet=home_cloudlet,
@@ -400,7 +411,6 @@ def init_users_hotspot(number, num_hot_edges=100):
             reward=reward,
         )
 
-        # 复用与 init_users 相同的 QoS 分布，便于对比
         r = random.random()
         if r < 0.5:
             user_acc = random.uniform(0.50, 0.65)
@@ -420,17 +430,19 @@ def init_users_hotspot(number, num_hot_edges=100):
 
 
 def init_users_for_debug(number=100):
-    """
-    用于debug 测试MHS 的算法
-    让他们都是同一个home cloudlet的
-    用作压测
+    """生成用于调试的集中式用户请求集合。
+    该函数会强制所有请求落到同一个 home cloudlet，便于压测和观察
+    MHS/RAA-Greedy 在高集中度场景下的行为。
+    Args:
+        number (int): 需要生成的调试请求数量。
+    Returns:
+        list[User]: 生成的调试用户请求对象列表。
     """
     neighbors = nearestNeighbors()
     users = []
     for _, row in neighbors[0:number].iterrows():
         home_cloudlet = 134872.0
         req_type = random.choice(service_types)
-        # long-text workload for debug users as well
         instruction = random.randint(300, 2000)
 
         rand_val = random.random()
@@ -450,7 +462,6 @@ def init_users_for_debug(number=100):
             instruction=instruction,
             reward=reward,
         )
-        # debug 场景下也采用更严格的时延需求
         user_delay = random.uniform(8 * 1000, 20 * 1000)  # delay
         user = User(request=req, accuracy=user_acc, delay=user_delay)
         users.append(user)
@@ -464,6 +475,17 @@ def run_hotspot_once(
     lambda_delay: float = 1e-3,
     seed: int = 4,
 ):
+    """运行一次指定热点数量下的离线算法对比实验。
+    该函数会重置随机种子，初始化实验环境和热点用户请求，并分别执行
+    RAA-Greedy、Knapsack、BTS 和 P2P，返回各算法的接纳数、奖励和耗时。
+    Args:
+        num_hot (int): 热点 cloudlet 数量。
+        num_users (int): 用户请求总数。
+        lambda_delay (float): 奖励函数中的时延惩罚权重。
+        seed (int): 随机种子。
+    Returns:
+        dict: 各算法的实验结果汇总。
+    """
     random.seed(seed)
     np.random.seed(seed)
 

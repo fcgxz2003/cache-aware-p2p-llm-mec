@@ -13,11 +13,15 @@ class ContextAwareLinUCB:
             getattr(fm, "id", None) or getattr(fm, "model_id", None)
             for fm in self.models
         ]
+        self.model_lookup = {
+            getattr(fm, "id", None) or getattr(fm, "model_id", None): fm
+            for fm in self.models
+        }
         self.service_types = sorted(
             {adapter.service_type for adapter in adapters_dict.values()}
         )
 
-        # 轻量上下文：请求特征 + 服务类型 + 本地资源利用率。
+        # 请求特征 + 服务类型 + 本地资源利用率。
         self.d = 4 + len(self.service_types) + 2
 
         # 动作空间只保留 foundation model 选择。
@@ -28,6 +32,7 @@ class ContextAwareLinUCB:
         self.b = {a: np.zeros(self.d) for a in self.actions}
 
     def _build_context_vector(self, user, edges_dict):
+        """为当前请求构造轻量上下文向量。"""
         req = user.request
         phi_r = [
             req.instruction / 10000.0,
@@ -53,7 +58,7 @@ class ContextAwareLinUCB:
         return c_t
 
     def get_valid_actions(self, user, G, edges_dict, adapters_dict):
-        # 只返回满足 QoS 约束的可行 foundation model；若为空，则视为必须拒绝。
+        """筛选满足 QoS 约束的可行动作集合。"""
         valid_actions = []
         req = user.request
         for fm in self.models:
@@ -79,6 +84,7 @@ class ContextAwareLinUCB:
         return valid_actions
 
     def decide(self, user, G, edges_dict, adapters_dict):
+        """基于 LinUCB 上置信界选择当前请求的 foundation model。"""
         req = user.request
         edge = edges_dict[req.homeCloudlet]
         c_t = self._build_context_vector(user, edges_dict)
@@ -86,16 +92,9 @@ class ContextAwareLinUCB:
         valid_actions = self.get_valid_actions(user, G, edges_dict, adapters_dict)
 
         def heuristic_score(action):
+            """在 UCB 分数相近时提供资源感知的启发式打分。"""
             mid = action
-            fm = next(
-                (
-                    model
-                    for model in self.models
-                    if getattr(model, "id", None) == mid
-                    or getattr(model, "model_id", None) == mid
-                ),
-                None,
-            )
+            fm = self.model_lookup.get(mid)
             if fm is None:
                 return -float("inf")
 
@@ -123,7 +122,7 @@ class ContextAwareLinUCB:
                 edges_dict,
             )
             net_utility = req.reward - 1e-3 * delay
-            combined = extra_storage + 4.0 * extra_gpu
+            combined = extra_storage + extra_gpu
 
             return net_utility / (combined + 1e-6)
 
@@ -173,7 +172,6 @@ def run_linucb_online(
     - 冷启动
     - 只学习 foundation model 选择，缓存/加载由固定 LRU 逻辑处理
     """
-    # cold-start
     cold_start_edges(edges)
     deployment_cost_weight = DEPLOYMENT_COST_WEIGHT  # 每新增写入 1GB 产生的部署开销
 
@@ -188,8 +186,8 @@ def run_linucb_online(
 
     for user in users:
         action, c_t = agent.decide(user, G, edges, adapters_dict)
-        # 若当前请求在 QoS 约束下没有任何可行动作，直接跳过（等价于被拒绝），
-        # 不对 bandit 做 update，避免把 "无法服务" 的样本错误归因到某个 arm。
+        # 若当前请求在 QoS 约束下没有任何可行动作，直接跳过，
+        # 不对 bandit 做 update，避免把无法服务的样本错误归因到某个 arm。
         if action is None:
             continue
 
@@ -222,7 +220,7 @@ def run_linucb_online(
         if (adapter.model_id, adapter.service_type) not in edge.cached_adapters:
             new_storage_mb += adapter.size
 
-        # 执行阶段：使用固定的 LRU 分配逻辑，不再显式学习缓存动作。
+        # 使用固定的 LRU 分配逻辑，不再显式学习缓存动作。
         if meets_qos and edge.try_allocate_with_lru(fm, adapter):
             deployment_cost = deployment_cost_weight * (new_storage_mb / 1024.0)
             reward = user.request.reward - delay_weight * delay - deployment_cost

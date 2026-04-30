@@ -74,10 +74,12 @@ def _build_user_plans(
     edges,
     lambda_delay,
 ):
-    # 对某个 edge 上的每个用户，记录 “用户可接受哪些 foundation model”。
-    # 之后 MHS 会从这些候选模型里挑一个尽量小的集合，使每个用户都至少被一个模型覆盖。
+    """为每个用户预计算所有可行模型方案及其有效收益。
+    Returns:
+        tuple: (candidate, user_plan_map)，分别表示每个 edge 的候选模型集
+        合和每个用户按模型索引的执行方案表。
+    """
     candidate = {}
-    # 后面做 reward 比较和剪枝时直接复用，不重复计算 delay / reward。
     user_plan_map = {}
 
     for user in users:
@@ -117,7 +119,7 @@ def _build_user_plans(
 
 
 def _best_plan_for_user(user, user_plan_map, current_models, blocked_adapters=None):
-    # 在当前保留下来的模型集合里，为这个用户挑一个最优执行方案。
+    """在当前保留模型集合中，为单个用户选择最优执行方案。"""
     best_mid = None
     best_plan = None
     blocked_adapters = blocked_adapters or set()
@@ -149,6 +151,7 @@ def _collect_edge_plans(
     current_models,
     blocked_adapters=None,
 ):
+    """收集指定 edge 在当前模型集合下的临时接纳与分配方案。"""
     # 先忽略容量，只看“每个用户最想选哪个模型”，形成一个临时分配方案。
     admitted_users = []
     allocation = {}
@@ -176,6 +179,7 @@ def _collect_edge_plans(
 
 
 def _allocation_is_feasible(edge, allocation):
+    """检查一批模型与适配器联合分配是否满足 edge 容量约束。"""
     # 复用收益。
     unique_models = {}
     unique_adapters = {}
@@ -190,6 +194,7 @@ def _allocation_is_feasible(edge, allocation):
 
 
 def _choose_pruned_model(edge_id, users, user_plan_map, current_models, fm_map):
+    """选择当前最适合被剪枝的 foundation model。"""
     # 当前模型集合超容量时，尝试删掉一个模型。
     # 枚举，看删完后还能保留多少总有效收益；如果收益差不多了，就删掉更大的模型（因为大模型更占资源，更可能是瓶颈）。
     best_model_to_remove = None
@@ -224,6 +229,7 @@ def _choose_pruned_adapter(
     allocation,
     adapters_dict,
 ):
+    """选择当前最适合被剪枝的 adapter。"""
     best_adapter_to_remove = None
     best_remaining_reward = float("-inf")
     best_removed_size = float("-inf")
@@ -258,6 +264,7 @@ def _choose_pruned_adapter(
 
 
 def _estimate_incremental_cost(edge, fm, adapter):
+    """估算在当前 edge 上新增部署模型与适配器的边际资源成本。"""
     extra_storage = 0.0
     extra_gpu = 0.0
 
@@ -276,6 +283,7 @@ def _estimate_incremental_cost(edge, fm, adapter):
 
 
 def _greedy_partial_admission(edge, admitted_users, allocation, user_plan_map):
+    """在整批方案不可行时，用贪心方式执行部分接纳。"""
     temp_edge = copy.deepcopy(edge)
 
     def user_rank(user):
@@ -304,6 +312,7 @@ def _greedy_partial_admission(edge, admitted_users, allocation, user_plan_map):
 
 
 def _best_single_model_fallback(edge_id, users, user_plan_map, edge):
+    """当命中集方案不可行时，搜索单模型回退方案。"""
     best_users = []
     best_allocation = {}
     best_reward = float("-inf")

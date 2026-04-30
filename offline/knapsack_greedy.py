@@ -1,5 +1,3 @@
-import networkx as nx
-
 from .raa_greedy import calculate_delay
 
 
@@ -35,11 +33,11 @@ def knapsack_greedy(
             if adapter is None:
                 continue
 
-            # 约束 1: 精度达标
+            # 精度达标
             if user.accuracy > adapter.accuracy:
                 continue
 
-            # 约束 2: 延迟达标（允许 P2P 拉取）
+            # 延迟达标（允许 P2P 拉取）
             delay = calculate_delay(home_id, fm, adapter, req.instruction, G, edges)
             if delay > user.delay:
                 continue
