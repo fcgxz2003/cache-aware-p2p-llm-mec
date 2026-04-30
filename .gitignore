@@ -2,3 +2,7 @@ xz参考/
 zlz参考/
 results/
 paper/
+.vscode/
+__pycache__/
+**/__pycache__/
+*.pyc
