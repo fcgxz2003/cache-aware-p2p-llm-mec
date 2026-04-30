@@ -37,7 +37,7 @@ def knapsack_greedy(
             if user.accuracy > adapter.accuracy:
                 continue
 
-            # 延迟达标（允许 P2P 拉取）
+            # 延迟达标
             delay = calculate_delay(home_id, fm, adapter, req.instruction, G, edges)
             if delay > user.delay:
                 continue
@@ -76,8 +76,8 @@ def knapsack_greedy(
     admitted_requests = []
     total_reward = 0.0
 
-    # 按 cloudlet 分组做 “0/1 背包式” 贪心
-    # edge 之间互不影响，因此可以分别处理
+    # 按 cloudlet 分组做背包贪心
+    # edge之间互不影响，因此可以分别处理
     edge_to_users = {}
     for user, info in user_best_plan.items():
         eid = user.request.homeCloudlet

@@ -125,7 +125,7 @@ def run_p2p_online(
             if (adp.model_id, adp.service_type) not in edge.cached_adapters:
                 new_storage_mb += adp.size
 
-            # 在线 P2P：若资源不足，则按 LRU 驱逐旧缓存/加载项，再尝试分配
+            # 若资源不足，则按 LRU 驱逐旧缓存/加载项，再尝试分配
             if edge.try_allocate_with_lru(fm, adp):
                 deployment_cost = deployment_cost_weight * (new_storage_mb / 1024.0)
                 total_reward += req.reward - delay_weight * delay - deployment_cost

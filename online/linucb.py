@@ -6,7 +6,7 @@ from online.P2P import calculate_delay as p2p_delay
 
 class ContextAwareLinUCB:
     def __init__(self, alpha, foundation_models, adapters_dict, edge_ids):
-        """LinUCB：仅学习模型选择，不显式学习缓存动作。"""
+        """LinUCB：仅学习模型选择不显式学习缓存动作。"""
         self.alpha = alpha
         self.models = foundation_models
         self.model_ids = [

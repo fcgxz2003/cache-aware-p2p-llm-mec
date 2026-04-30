@@ -31,9 +31,7 @@ def run_eps_greedy_online(
     stats_decay_factor: float = 0.8,
 ):
     """在线 ε-greedy：在 QoS 可行动作集合上直接学习模型与缓存动作。
-
-    为了保持与论文一致，这里将动作简化为
-    (foundation model, cache_model, cache_adapter)，并为每个 home cloudlet
+    action (foundation model, cache_model, cache_adapter)，并为每个 home cloudlet
     维护局部经验均值。其余参数保留仅为兼容已有调用。
     """
 

@@ -44,7 +44,7 @@ def run_bts_online(
 
         # 恢复资源感知的启发式：综合考虑 reward 与新增资源占用。
         def score(item):
-            '''计算候选模型的单位资源净收益排序分数。'''
+            """计算候选模型的单位资源净收益排序分数。"""
             mid, delay = item
             fm = fm_map[mid]
             adp = adapters_dict[(mid, req.type)]
@@ -83,7 +83,7 @@ def run_bts_online(
             if net_reward <= 0:
                 continue
 
-            # 在线 BTS：尝试按 LRU 驱逐策略为新模型+适配器腾出资源
+            # 尝试按 LRU 驱逐策略为新模型+适配器腾出资源
             if edge.try_allocate_with_lru(fm, adp):
                 total_reward += net_reward
                 admitted.append(user)
